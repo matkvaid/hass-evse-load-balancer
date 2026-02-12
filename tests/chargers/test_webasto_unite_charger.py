@@ -260,5 +260,5 @@ def test_set_phase_mode(webasto_unite_charger):
 
 def test_set_phase_mode_invalid(webasto_unite_charger):
     """Test set_phase_mode raises ValueError for invalid mode."""
-    with pytest.raises(ValueError, match="Invalid mode"):
+    with pytest.raises(ValueError, match="Invalid phase mode"):
         webasto_unite_charger.set_phase_mode("invalid_mode")

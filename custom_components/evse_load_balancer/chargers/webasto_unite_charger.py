@@ -70,7 +70,7 @@ class WebastoUniteCharger(HaDevice, Charger):
     def set_phase_mode(self, mode: PhaseMode, _phase: Phase | None = None) -> None:
         """Set the phase mode of the charger."""
         if mode not in PhaseMode:
-            msg = "Invalid mode. Must be 'single' or 'multi'."
+            msg = "Invalid phase mode. Must be PhaseMode.SINGLE or PhaseMode.MULTI."
             raise ValueError(msg)
         # Webasto Unite does not support dynamic phase mode switching
         # Phase configuration is determined by hardware installation
