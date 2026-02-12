@@ -1,0 +1,99 @@
+diff --git a/custom_components/webasto_unite_modbus/number.py b/custom_components/webasto_unite_modbus/number.py
+index 0b8d2d5..1e32799 100644
+--- a/custom_components/webasto_unite_modbus/number.py
++++ b/custom_components/webasto_unite_modbus/number.py
+@@ -19,6 +19,7 @@ from homeassistant.components.number import (
+ )
+ from homeassistant.const import UnitOfElectricCurrent, UnitOfTime
+ from homeassistant.helpers.update_coordinator import CoordinatorEntity
++from homeassistant.helpers.entity import DeviceInfo
+ 
+ from .const import DOMAIN
+ from .coordinator import WebastoUniteCoordinator, SENSOR_UNITS
+@@ -84,6 +85,20 @@ class WebastoUniteNumber(CoordinatorEntity[WebastoUniteCoordinator], NumberEntit
+         self.entity_description = description
+         self._attr_unique_id = f"{coordinator.entry.entry_id}_{description.key}"
+         self._attr_name = description.name or description.key.replace("_", " ").title()
++        
++        # Set up device info to register this charger as a device
++        serial = coordinator.data.get("serial_number", coordinator.entry.entry_id)
++        brand = coordinator.data.get("brand", "Webasto")
++        model = coordinator.data.get("model", "Unite")
++        
++        self._attr_device_info = DeviceInfo(
++            identifiers={(DOMAIN, serial)},
++            name=f"{brand} {model}",
++            manufacturer=brand,
++            model=model,
++            sw_version=coordinator.data.get("firmware_version"),
++        )
++        
+         # Set unit of measurement from SENSOR_UNITS if defined
+         unit = SENSOR_UNITS.get(description.key)
+         if unit is not None:
+diff --git a/custom_components/webasto_unite_modbus/sensor.py b/custom_components/webasto_unite_modbus/sensor.py
+index dfbe72e..b31a673 100644
+--- a/custom_components/webasto_unite_modbus/sensor.py
++++ b/custom_components/webasto_unite_modbus/sensor.py
+@@ -32,6 +32,7 @@ from homeassistant.const import (
+     UnitOfTime,
+ )
+ from homeassistant.helpers.update_coordinator import CoordinatorEntity
++from homeassistant.helpers.entity import DeviceInfo
+ 
+ from .const import DOMAIN
+ from .coordinator import (
+@@ -279,6 +280,21 @@ class WebastoUniteSensor(CoordinatorEntity[WebastoUniteCoordinator], SensorEntit
+         self._attr_unique_id = f"{coordinator.entry.entry_id}_{description.key}"
+         # Set a friendly name; use description.name or fall back to key
+         self._attr_name = description.name or description.key.replace("_", " ").title()
++        
++        # Set up device info to register this charger as a device
++        # Use serial number as the unique identifier
++        serial = coordinator.data.get("serial_number", coordinator.entry.entry_id)
++        brand = coordinator.data.get("brand", "Webasto")
++        model = coordinator.data.get("model", "Unite")
++        
++        self._attr_device_info = DeviceInfo(
++            identifiers={(DOMAIN, serial)},
++            name=f"{brand} {model}",
++            manufacturer=brand,
++            model=model,
++            sw_version=coordinator.data.get("firmware_version"),
++        )
++        
+         # Set device class and state class when possible
+         unit = SENSOR_UNITS.get(description.key)
+         if unit is not None:
+diff --git a/custom_components/webasto_unite_modbus/switch.py b/custom_components/webasto_unite_modbus/switch.py
+index 727e15a..d4b6a95 100644
+--- a/custom_components/webasto_unite_modbus/switch.py
++++ b/custom_components/webasto_unite_modbus/switch.py
+@@ -14,6 +14,7 @@ from typing import Any
+ 
+ from homeassistant.components.switch import SwitchEntity
+ from homeassistant.helpers.update_coordinator import CoordinatorEntity
++from homeassistant.helpers.entity import DeviceInfo
+ 
+ from .const import DOMAIN
+ from .coordinator import WebastoUniteCoordinator
+@@ -34,6 +35,19 @@ class WebastoUniteAliveSwitch(CoordinatorEntity[WebastoUniteCoordinator], Switch
+         super().__init__(coordinator)
+         self._attr_unique_id = f"{coordinator.entry.entry_id}_alive_register"
+         self._attr_name = "Alive Register"
++        
++        # Set up device info to register this charger as a device
++        serial = coordinator.data.get("serial_number", coordinator.entry.entry_id)
++        brand = coordinator.data.get("brand", "Webasto")
++        model = coordinator.data.get("model", "Unite")
++        
++        self._attr_device_info = DeviceInfo(
++            identifiers={(DOMAIN, serial)},
++            name=f"{brand} {model}",
++            manufacturer=brand,
++            model=model,
++            sw_version=coordinator.data.get("firmware_version"),
++        )
+ 
+     @property
+     def is_on(self) -> bool:
