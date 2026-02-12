@@ -51,13 +51,14 @@ _Supports 1-3 Phase configurations_
 
 ### EV Chargers
 
-| Integration                         | Documentation                                                           | Minimum Version |
-| ----------------------------------- | ----------------------------------------------------------------------- | --------------- |
-| Easee Chargers                      | [nordicopen/easee_hass](https://github.com/nordicopen/easee_hass)       | v0.9.62         |
-| Zaptec Chargers                     | [custom-components/zaptec](https://github.com/custom-components/zaptec) | v0.8.0          |
-| Amina S Chargers                    | [Zigbee2MQTT/amina_S](https://www.zigbee2mqtt.io/devices/amina_S.html)  | ?               |
-| Lektrico Chargers                   | [lektrico](https://www.home-assistant.io/integrations/lektrico/)        | HA 2024.10+     |
-| Keba Charging Station (BMW Wallbox) | [keba](https://www.home-assistant.io/integrations/keba/)                | ?               |
+| Integration                         | Documentation                                                                          | Minimum Version |
+| ----------------------------------- | -------------------------------------------------------------------------------------- | --------------- |
+| Easee Chargers                      | [nordicopen/easee_hass](https://github.com/nordicopen/easee_hass)                      | v0.9.62         |
+| Zaptec Chargers                     | [custom-components/zaptec](https://github.com/custom-components/zaptec)                | v0.8.0          |
+| Amina S Chargers                    | [Zigbee2MQTT/amina_S](https://www.zigbee2mqtt.io/devices/amina_S.html)                 | ?               |
+| Lektrico Chargers                   | [lektrico](https://www.home-assistant.io/integrations/lektrico/)                       | HA 2024.10+     |
+| Keba Charging Station (BMW Wallbox) | [keba](https://www.home-assistant.io/integrations/keba/)                               | ?               |
+| Webasto Unite Chargers              | [matkvaid/webasto_unite_modbus](https://github.com/matkvaid/webasto_unite_modbus)     | v0.1.0+         |
 
 _Additional chargers to be added..._
 
