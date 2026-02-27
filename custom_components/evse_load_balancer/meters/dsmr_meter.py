@@ -77,14 +77,15 @@ class DsmrMeter(Meter, HaDevice):
             phase, cf.CONF_PHASE_SENSOR_PRODUCTION
         )
 
-        if None in [consumption_state, production_state]:
+        if consumption_state is None:
             _LOGGER.warning(
-                "Missing states for one of phase %s: consumption: %s, production: %s",
+                "Missing consumption state for phase %s. Is the entity enabled?",
                 phase,
-                consumption_state,
-                production_state,
             )
             return None
+        # Production entity may not exist (e.g. no solar panels); default to 0
+        if production_state is None:
+            production_state = 0.0
         return consumption_state - production_state
 
     def get_tracking_entities(self) -> list[str]:
@@ -102,17 +103,22 @@ class DsmrMeter(Meter, HaDevice):
 
     def _get_entity_id_for_phase_sensor(
         self, phase: Phase, sensor_const: str
-    ) -> float | None:
-        """Get the state of the entity for a given phase and translation key."""
-        return self._get_entity_id_by_translation_key(
-            self._get_entity_map_for_phase(phase)[sensor_const]
-        )
+    ) -> str | None:
+        """Get the entity ID for a given phase and sensor constant."""
+        try:
+            return self._get_entity_id_by_translation_key(
+                self._get_entity_map_for_phase(phase)[sensor_const]
+            )
+        except ValueError:
+            return None
 
     def _get_entity_state_for_phase_sensor(
         self, phase: Phase, sensor_const: str
     ) -> float | None:
         """Get the state of the entity for a given phase and translation key."""
         entity_id = self._get_entity_id_for_phase_sensor(phase, sensor_const)
+        if entity_id is None:
+            return None
         return self._get_entity_state(entity_id, float)
 
     def _get_entity_map_for_phase(self, phase: Phase) -> dict:
