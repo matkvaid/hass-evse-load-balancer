@@ -1,6 +1,7 @@
 """Webasto Unite Charger implementation."""
 
 import logging
+from typing import ClassVar
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -154,6 +155,18 @@ class WebastoUniteCharger(HaDevice, Charger):
         """
         return True
 
+    _CHARGE_POINT_STATE_STRING_MAP: ClassVar[dict[str, int]] = {
+        "available": WebastoUniteStatusMap.Available,
+        "preparing": WebastoUniteStatusMap.Preparing,
+        "charging": WebastoUniteStatusMap.Charging,
+        "suspendedevse": WebastoUniteStatusMap.SuspendedEVSE,
+        "suspendedev": WebastoUniteStatusMap.SuspendedEV,
+        "finishing": WebastoUniteStatusMap.Finishing,
+        "reserved": WebastoUniteStatusMap.Reserved,
+        "unavailable": WebastoUniteStatusMap.Unavailable,
+        "faulted": WebastoUniteStatusMap.Faulted,
+    }
+
     def _get_status(self) -> int | None:
         """Get the current charge point state."""
         state = self._get_entity_state_by_key(WebastoUniteEntityMap.Status)
@@ -163,11 +176,23 @@ class WebastoUniteCharger(HaDevice, Charger):
         try:
             return int(float(state))
         except (ValueError, TypeError):
-            _LOGGER.warning(
-                "Could not parse charge point state value: %s",
+            pass
+
+        key = str(state).strip().lower()
+        code = self._CHARGE_POINT_STATE_STRING_MAP.get(key)
+        if code is not None:
+            _LOGGER.debug(
+                "Mapped charge point state string '%s' to code %d",
                 state,
+                code,
             )
-            return None
+            return code
+
+        _LOGGER.warning(
+            "Could not parse charge point state value: %s",
+            state,
+        )
+        return None
 
     def car_connected(self) -> bool:
         """Check if a car is connected to the charger."""
