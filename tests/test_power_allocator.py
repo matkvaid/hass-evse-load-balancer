@@ -494,3 +494,89 @@ def test_single_phase_manual_override_detection(power_allocator: PowerAllocator)
         Phase.L2: 14,
         Phase.L3: 14
     }
+
+
+def test_manual_override_does_not_corrupt_requested_current_on_slow_charger_response(power_allocator: PowerAllocator):
+    """
+    Test that requested_current is not corrupted when a charger is slow to respond.
+
+    Scenario (race condition):
+    1. Load balancer applies 27A (overcurrent cut from 32A).
+    2. Settle time expires but charger still reports 32A (slow response).
+    3. This looks like a manual override to 32A – should NOT change requested_current
+       because it already matches the desired max (32A).
+    4. Charger finally responds with 27A.
+    5. requested_current must still be 32A (not corrupted to 27A).
+
+    Without the fix, step 4 would trigger a second false override detection (27 != 32)
+    and corrupt requested_current = 27A, making further increases impossible.
+    """
+    import time as time_mod
+
+    charger = MockCharger(initial_current=32, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+
+    # Verify initial state
+    state = power_allocator._chargers["charger1"]
+    assert state.requested_current == {Phase.L1: 32, Phase.L2: 32, Phase.L3: 32}
+    assert state.last_applied_current == {Phase.L1: 32, Phase.L2: 32, Phase.L3: 32}
+
+    # Step 1: Load balancer applies 27A (overcurrent cut)
+    power_allocator.update_applied_current(
+        "charger1",
+        {Phase.L1: 27, Phase.L2: 27, Phase.L3: 27},
+        timestamp=int(time_mod.time()) - 20,   # 20s ago → settle time has expired
+    )
+
+    assert state.last_applied_current == {Phase.L1: 27, Phase.L2: 27, Phase.L3: 27}
+    assert state.requested_current == {Phase.L1: 32, Phase.L2: 32, Phase.L3: 32}
+
+    # Step 2: Charger still reports 32A (slow response, settle time expired)
+    charger.set_current_limits({Phase.L1: 32, Phase.L2: 32, Phase.L3: 32})
+    state.detect_manual_override()
+
+    # requested_current should NOT change (charger showing its old value is
+    # identical to what we WANT (32A), so no actual user override)
+    assert state.requested_current == {Phase.L1: 32, Phase.L2: 32, Phase.L3: 32}
+
+    # Step 3: Charger finally responds with 27A
+    charger.set_current_limits({Phase.L1: 27, Phase.L2: 27, Phase.L3: 27})
+    state.detect_manual_override()
+
+    # Crucially, requested_current must remain 32A (NOT corrupted to 27A)
+    assert state.requested_current == {Phase.L1: 32, Phase.L2: 32, Phase.L3: 32}, (
+        "requested_current was corrupted to the reduced charger value. "
+        "Increases will be blocked indefinitely."
+    )
+
+
+def test_manual_override_detected_when_user_sets_different_value(power_allocator: PowerAllocator):
+    """
+    Test that a genuine manual override (user sets a different value) is still detected.
+
+    If the user changes the charger to a value that differs from both the last applied
+    value AND the current requested_current, it must be treated as a manual override.
+    """
+    import time as time_mod
+
+    charger = MockCharger(initial_current=32, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+
+    state = power_allocator._chargers["charger1"]
+
+    # Load balancer applied 27A
+    power_allocator.update_applied_current(
+        "charger1",
+        {Phase.L1: 27, Phase.L2: 27, Phase.L3: 27},
+        timestamp=int(time_mod.time()) - 20,
+    )
+
+    # User manually changes charger to 20A (different from both last_applied=27 and requested=32)
+    charger.set_current_limits({Phase.L1: 20, Phase.L2: 20, Phase.L3: 20})
+    state.detect_manual_override()
+
+    # This IS a genuine override – requested_current must be updated to 20A
+    assert state.manual_override_detected is True
+    assert state.requested_current == {Phase.L1: 20, Phase.L2: 20, Phase.L3: 20}
