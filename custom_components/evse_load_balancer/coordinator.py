@@ -275,6 +275,16 @@ class EVSELoadBalancerCoordinator:
             self.config_entry, of.OPTION_CHARGE_LIMIT_HYSTERESIS
         )
 
+        # Allow immediate decreases for safety (overcurrent protection)
+        if any(new_settings[p] < current_limits[p] for p in new_settings):
+            _LOGGER.debug(
+                "New charger settings are lower, apply immediately for safety. "
+                "Current settings: %s, new settings: %s",
+                current_limits,
+                new_settings,
+            )
+            return True
+
         # For any change a minimum delay is required
         if timestamp - last_update_time <= MIN_CHARGER_UPDATE_DELAY:
             _LOGGER.debug(
@@ -286,16 +296,6 @@ class EVSELoadBalancerCoordinator:
                 MIN_CHARGER_UPDATE_DELAY,
             )
             return False
-
-        # Allow immediate decreases for safety (overcurrent protection)
-        if any(new_settings[p] < current_limits[p] for p in new_settings):
-            _LOGGER.debug(
-                "New charger settings are lower, apply immediately for safety. "
-                "Current settings: %s, new settings: %s",
-                current_limits,
-                new_settings,
-            )
-            return True
 
         # For increases, also require additional configured delay
         if any(
