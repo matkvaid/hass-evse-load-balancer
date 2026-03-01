@@ -46,6 +46,7 @@ class EVSELoadBalancerCoordinator:
     # MODIFIED: Store as datetime object or None
     _last_check_timestamp: datetime | None = None
     _last_charger_update_time: int | None = None
+    _last_decrease_time: int | None = None
 
     def __init__(
         self,
@@ -240,6 +241,11 @@ class EVSELoadBalancerCoordinator:
             current_limits=current_limit,
             timestamp=now.timestamp(),
         ):
+            is_decrease = any(
+                allocation_result[p] < current_limit[p] for p in allocation_result
+            )
+            if is_decrease:
+                self._last_decrease_time = now.timestamp()
             self._update_charger_settings(
                 new_limits=allocation_result, timestamp=now.timestamp()
             )
@@ -297,10 +303,18 @@ class EVSELoadBalancerCoordinator:
             )
             return False
 
-        # For increases, also require additional configured delay
+        # For increases, also require additional configured delay since the last decrease.
+        # Using last_decrease_time (not last_update_time) ensures that the increase
+        # hysteresis window is not reset by subsequent increases, only by decreases.
+        # If no decrease has happened yet, fall back to last_update_time (original behavior).
+        last_decrease_time = (
+            self._last_decrease_time
+            if self._last_decrease_time is not None
+            else last_update_time
+        )
         if any(
             new_settings[p] > current_limits[p] for p in new_settings
-        ) and timestamp - last_update_time > (of_charger_delay_minutes * 60):
+        ) and timestamp - last_decrease_time > (of_charger_delay_minutes * 60):
             return True
 
         _LOGGER.debug(

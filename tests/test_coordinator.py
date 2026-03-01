@@ -1055,3 +1055,53 @@ def test_timing_prevents_rapid_increases_but_allows_decreases(coordinator_single
     assert coordinator_single_phase._power_allocator.update_allocation.call_count == 1
     assert coordinator_single_phase._charger.set_current_limit.call_count == 1
     coordinator_single_phase._charger.set_current_limit.assert_called_with({Phase.L1: 7})
+
+
+def test_increase_hysteresis_not_reset_by_subsequent_increases(coordinator_single_phase):
+    """
+    Test that the 15-minute increase hysteresis is measured from the LAST DECREASE,
+    not from the last increase.
+
+    Without this fix, each step increase would restart the 15-minute window, making
+    full recovery from a reduction take many times 15 minutes instead of just once.
+    """
+    base_time = datetime.now()
+
+    # === Setup: Simulate a decrease that happened 16 minutes ago ===
+    coordinator_single_phase._charger.set_current_limits({Phase.L1: 10})
+    # Decrease happened 16 min ago
+    coordinator_single_phase._last_charger_update_time = (
+        base_time - timedelta(minutes=16)
+    ).timestamp()
+    coordinator_single_phase._last_decrease_time = (
+        base_time - timedelta(minutes=16)
+    ).timestamp()
+
+    # === CYCLE 1: First increase after 16 min (should be allowed) ===
+    coordinator_single_phase._balancer_algo.compute_availability.return_value = {Phase.L1: 2}
+    coordinator_single_phase._power_allocator.update_allocation.return_value = {
+        coordinator_single_phase._charger.id: {Phase.L1: 12}  # Increase
+    }
+
+    coordinator_single_phase._execute_update_cycle(base_time)
+
+    assert coordinator_single_phase._charger.set_current_limit.call_count == 1
+    coordinator_single_phase._charger.set_current_limit.reset_mock()
+
+    # === CYCLE 2: Second increase 21 seconds later (should be allowed) ===
+    # Last decrease was 16 min + 21s ago → still > 15 min → should be allowed.
+    # Without the fix, last_charger_update_time was just reset by the first increase,
+    # so timestamp - last_update = 21s < 15min → would be blocked.
+    coordinator_single_phase._charger.set_current_limits({Phase.L1: 12})
+    coordinator_single_phase._power_allocator.update_allocation.return_value = {
+        coordinator_single_phase._charger.id: {Phase.L1: 14}  # Second step increase
+    }
+
+    coordinator_single_phase._execute_update_cycle(base_time + timedelta(seconds=21))
+
+    # With the fix: second increase is allowed (hysteresis measured from last_decrease_time)
+    assert coordinator_single_phase._charger.set_current_limit.call_count == 1, (
+        "Second step increase was blocked even though 15+ minutes have passed "
+        "since the last decrease. The hysteresis timer was incorrectly reset by "
+        "the first increase."
+    )

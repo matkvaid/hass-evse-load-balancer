@@ -70,9 +70,9 @@ class ChargerState:
                 current_setting[phase] != self.last_applied_current[phase]
                 for phase in current_setting
             )
+            and current_setting != self.requested_current
         ):
             self.requested_current = dict(current_setting)
-            self.last_applied_current = dict(current_setting)
             self.manual_override_detected = True
             _LOGGER.info(
                 "Manual override detected for charger. New requested current: %s",
