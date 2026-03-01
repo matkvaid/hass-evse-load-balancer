@@ -262,3 +262,78 @@ def test_set_phase_mode_invalid(webasto_unite_charger):
     """Test set_phase_mode raises ValueError for invalid mode."""
     with pytest.raises(ValueError, match="Invalid phase mode"):
         webasto_unite_charger.set_phase_mode("invalid_mode")
+
+
+# Tests for string-based charge_point_state values (webasto_unite_modbus decoded strings)
+
+
+def test_get_status_string_charging(webasto_unite_charger):
+    """Test _get_status returns 2 when state is the string 'Charging'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "Charging"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.Charging
+
+
+def test_get_status_string_preparing(webasto_unite_charger):
+    """Test _get_status returns correct code for 'Preparing'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "Preparing"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.Preparing
+
+
+def test_get_status_string_available(webasto_unite_charger):
+    """Test _get_status returns correct code for 'Available'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "Available"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.Available
+
+
+def test_get_status_string_suspended_evse(webasto_unite_charger):
+    """Test _get_status returns correct code for 'SuspendedEVSE'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "SuspendedEVSE"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.SuspendedEVSE
+
+
+def test_get_status_string_suspended_ev(webasto_unite_charger):
+    """Test _get_status returns correct code for 'SuspendedEV'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "SuspendedEV"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.SuspendedEV
+
+
+def test_get_status_string_finishing(webasto_unite_charger):
+    """Test _get_status returns correct code for 'Finishing'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "Finishing"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.Finishing
+
+
+def test_get_status_string_faulted(webasto_unite_charger):
+    """Test _get_status returns correct code for 'Faulted'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "Faulted"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.Faulted
+
+
+def test_get_status_string_case_insensitive(webasto_unite_charger):
+    """Test _get_status is case-insensitive for string states."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "charging"
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.Charging
+
+
+def test_get_status_string_with_whitespace(webasto_unite_charger):
+    """Test _get_status strips whitespace from string states."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "  Charging  "
+    assert webasto_unite_charger._get_status() == WebastoUniteStatusMap.Charging
+
+
+def test_get_status_string_unknown(webasto_unite_charger):
+    """Test _get_status returns None for unknown string states."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "UnknownState"
+    assert webasto_unite_charger._get_status() is None
+
+
+def test_can_charge_string_charging(webasto_unite_charger):
+    """Test can_charge returns True when state is the string 'Charging'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "Charging"
+    assert webasto_unite_charger.can_charge() is True
+
+
+def test_is_charging_string_charging(webasto_unite_charger):
+    """Test is_charging returns True when state is the string 'Charging'."""
+    webasto_unite_charger._get_entity_state_by_key.return_value = "Charging"
+    assert webasto_unite_charger.is_charging() is True
