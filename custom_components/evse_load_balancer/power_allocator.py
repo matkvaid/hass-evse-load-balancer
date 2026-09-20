@@ -19,6 +19,7 @@ class ChargerState:
         self.requested_current: dict[Phase, int] | None = None
         self.last_calculated_current: dict[Phase, int] | None = None
         self.last_applied_current: dict[Phase, int] | None = None
+        self.previous_applied_current: dict[Phase, int] | None = None
         self.last_update_time: int = 0
         self.manual_override_detected: bool = False
         self.initialized: bool = False
@@ -70,7 +71,13 @@ class ChargerState:
                 current_setting[phase] != self.last_applied_current[phase]
                 for phase in current_setting
             )
-            and current_setting != self.requested_current
+            # A slow-polling charger (e.g. Modbus) can still report the value
+            # from before our latest command once the settle time has passed.
+            # That looks identical to a manual override unless we also check
+            # it isn't simply an unconfirmed echo of our own requested or
+            # previously applied current.
+            and current_setting
+            not in (self.requested_current, self.previous_applied_current)
         ):
             self.requested_current = dict(current_setting)
             self.manual_override_detected = True
@@ -212,8 +219,10 @@ class PowerAllocator:
         """Update the record of what current was actually applied to the charger."""
         if charger_id not in self._chargers:
             _LOGGER.warning("Charger %s not found in PowerAllocator", charger_id)
+            return
 
         state = self._chargers[charger_id]
+        state.previous_applied_current = state.last_applied_current
         state.last_applied_current = dict(applied_current)
         state.last_update_time = timestamp
         _LOGGER.debug(

@@ -580,3 +580,46 @@ def test_manual_override_detected_when_user_sets_different_value(power_allocator
     # This IS a genuine override – requested_current must be updated to 20A
     assert state.manual_override_detected is True
     assert state.requested_current == {Phase.L1: 20, Phase.L2: 20, Phase.L3: 20}
+
+
+def test_manual_override_does_not_corrupt_requested_current_on_slow_recovery(power_allocator: PowerAllocator):
+    """
+    Test that requested_current survives a slow-polling charger during recovery.
+
+    Scenario (mirrors slow-charger decrease race, but on the increase side):
+    1. Load balancer cuts 16A -> 6A. Charger confirms 6A correctly.
+    2. Load balancer later raises the limit 6A -> 16A (recovery).
+    3. Settle time expires but a slow-polling charger (e.g. Modbus-based,
+       such as Webasto Unite) hasn't refreshed its entity yet, so
+       get_current_limit() still reports the pre-increase value (6A).
+
+    Without the fix, step 3 looks identical to the user manually setting the
+    charger back down to 6A, corrupting requested_current to 6A and
+    permanently capping recovery below the original request.
+    """
+    charger = MockCharger(initial_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+
+    state = power_allocator._chargers["charger1"]
+
+    # Step 1: cut 16A -> 6A, charger confirms correctly.
+    power_allocator.update_applied_current(
+        "charger1", dict.fromkeys(Phase, 6), timestamp=int(time()) - 20
+    )
+    charger.set_current_limits(dict.fromkeys(Phase, 6))
+    state.detect_manual_override()
+    assert state.requested_current == dict.fromkeys(Phase, 16)
+
+    # Step 2: recovery raises 6A -> 16A.
+    power_allocator.update_applied_current(
+        "charger1", dict.fromkeys(Phase, 16), timestamp=int(time()) - 20
+    )
+    # Step 3: slow charger hasn't polled yet, still reports the old 6A.
+    charger.set_current_limits(dict.fromkeys(Phase, 6))
+    state.detect_manual_override()
+
+    assert state.requested_current == dict.fromkeys(Phase, 16), (
+        "requested_current was corrupted to the stale pre-increase value; "
+        "recovery is now permanently capped."
+    )
