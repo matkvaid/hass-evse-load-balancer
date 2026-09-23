@@ -208,9 +208,12 @@ class WebastoUniteCharger(HaDevice, Charger):
     def can_charge(self) -> bool:
         """Check if the charger is ready to deliver charge."""
         status = self._get_status()
+        # SuspendedEVSE is what the charger reports when the balancer has set
+        # the limit below its minimum; it must stay managed so it can be raised.
         return status in [
             WebastoUniteStatusMap.Preparing,
             WebastoUniteStatusMap.Charging,
+            WebastoUniteStatusMap.SuspendedEVSE,
             WebastoUniteStatusMap.SuspendedEV,
         ]
 

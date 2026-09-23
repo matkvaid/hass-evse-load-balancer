@@ -223,11 +223,30 @@ def test_can_charge_suspended_ev(webasto_unite_charger):
 
 
 def test_can_charge_suspended_evse(webasto_unite_charger):
-    """Test can_charge returns False when charger is suspended by EVSE."""
+    """
+    Test can_charge returns True when charger is suspended by EVSE.
+
+    The charger reports SuspendedEVSE when the balancer cuts the limit below
+    its minimum. It must remain managed, otherwise the balancer stops running
+    and never raises the limit again.
+    """
     webasto_unite_charger._get_entity_state_by_key.return_value = str(
         WebastoUniteStatusMap.SuspendedEVSE
     )
-    assert webasto_unite_charger.can_charge() is False
+    assert webasto_unite_charger.can_charge() is True
+
+
+def test_can_charge_false(webasto_unite_charger):
+    """Test can_charge returns False for states without an active session."""
+    for status in (
+        WebastoUniteStatusMap.Available,
+        WebastoUniteStatusMap.Finishing,
+        WebastoUniteStatusMap.Reserved,
+        WebastoUniteStatusMap.Unavailable,
+        WebastoUniteStatusMap.Faulted,
+    ):
+        webasto_unite_charger._get_entity_state_by_key.return_value = str(status)
+        assert webasto_unite_charger.can_charge() is False
 
 
 def test_is_charging_true(webasto_unite_charger):
