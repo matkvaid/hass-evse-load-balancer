@@ -115,3 +115,10 @@ def test_get_entity_map_for_phase_valid(homewizard_meter):
 def test_get_entity_map_for_phase_invalid(homewizard_meter):
     with pytest.raises(ValueError):
         homewizard_meter._get_entity_map_for_phase("invalid_phase")
+
+
+def test_get_active_phase_current_missing_entity(homewizard_meter):
+    """An entity that does not exist results in no reading instead of an error."""
+    homewizard_meter._get_entity_id_by_key.side_effect = ValueError
+    assert homewizard_meter.get_active_phase_current(Phase.L1) is None
+    homewizard_meter._get_entity_state.assert_not_called()

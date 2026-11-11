@@ -120,3 +120,10 @@ def test_tibber_entity_map_keys():
     assert l3_map["current"] == "currentL3"
     assert l3_map["voltage"] == "voltagePhase3"
     assert "power" not in l3_map
+
+
+def test_get_active_phase_current_missing_entity(tibber_meter):
+    """An entity that does not exist results in no reading instead of an error."""
+    tibber_meter._get_entity_id_by_key.side_effect = ValueError
+    assert tibber_meter.get_active_phase_current(Phase.L1) is None
+    tibber_meter._get_entity_state.assert_not_called()

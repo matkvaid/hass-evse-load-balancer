@@ -381,3 +381,15 @@ def test_get_status_none(lektrico_charger):
 
     # Verify results
     assert result is None
+
+
+def test_get_current_limit_missing(lektrico_charger):
+    """Test retrieving the current limit when the entity has no value."""
+    lektrico_charger._get_entity_state_by_key.return_value = None
+    assert lektrico_charger.get_current_limit() is None
+
+
+def test_get_max_current_limit_missing(lektrico_charger):
+    """Test retrieving the max current limit when the entity has no value."""
+    lektrico_charger._get_entity_state_by_key.return_value = None
+    assert lektrico_charger.get_max_current_limit() is None

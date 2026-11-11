@@ -164,3 +164,20 @@ def test_get_entity_state_for_phase_sensor(amsleser_meter):
     assert result == 10
 
 
+
+
+def test_get_active_phase_current_zero(amsleser_meter):
+    """A phase without any load reports 0 A, which is a reading and not a failure."""
+    amsleser_meter._get_entity_state_for_phase_sensor = MagicMock(
+        side_effect=lambda _, s: 0.0 if s == cf.CONF_PHASE_SENSOR_CURRENT else None
+    )
+    assert amsleser_meter.get_active_phase_current(Phase.L1) == 0
+
+
+def test_get_entity_state_for_phase_sensor_missing_entity(amsleser_meter):
+    """An entity that does not exist results in no reading instead of an error."""
+    amsleser_meter._get_entity_id_by_key = MagicMock(side_effect=ValueError)
+    result = amsleser_meter._get_entity_state_for_phase_sensor(
+        Phase.L1, cf.CONF_PHASE_SENSOR_CURRENT
+    )
+    assert result is None

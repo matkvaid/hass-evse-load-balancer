@@ -244,3 +244,16 @@ def test_set_phase_mode_invalid(easee_charger):
         # Using a string instead of PhaseMode enum should raise ValueError
         easee_charger.set_phase_mode("invalid_mode", Phase.L1)
     assert "Invalid mode" in str(excinfo.value)
+
+
+def test_get_current_limit_decimal_state(easee_charger):
+    """Test that a limit reported with decimals is parsed instead of raising."""
+    easee_charger._get_entity_state_by_translation_key.return_value = "16.0"
+    assert easee_charger.get_current_limit() == dict.fromkeys(Phase, 16)
+
+
+def test_get_current_limit_unparsable_state(easee_charger):
+    """Test that a limit that is not a number is handled as missing."""
+    easee_charger._get_entity_state_by_translation_key.return_value = "n/a"
+    assert easee_charger.get_current_limit() is None
+    assert easee_charger.get_max_current_limit() is None
