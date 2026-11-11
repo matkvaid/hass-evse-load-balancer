@@ -513,7 +513,7 @@ def test_manual_override_does_not_corrupt_requested_current_on_slow_charger_resp
     """
     import time as time_mod
 
-    charger = MockCharger(initial_current=32, charger_id="charger1")
+    charger = MockCharger(initial_current=32, max_current=32, charger_id="charger1")
     charger.set_can_charge(True)
     power_allocator.add_charger_and_initialize(charger)
 
@@ -623,3 +623,176 @@ def test_manual_override_does_not_corrupt_requested_current_on_slow_recovery(pow
         "requested_current was corrupted to the stale pre-increase value; "
         "recovery is now permanently capped."
     )
+
+
+# ===== REDUCTIONS THAT ARE STILL TAKING EFFECT =====
+
+def _apply(power_allocator: PowerAllocator, charger: MockCharger, result: dict, timestamp: float) -> None:
+    """Apply an allocation result the way the coordinator does."""
+    limits = result[charger.id]
+    charger.set_current_limits(limits)
+    power_allocator.update_applied_current(charger.id, limits, timestamp=timestamp)
+
+
+def test_reduction_is_not_repeated_before_it_can_take_effect(power_allocator: PowerAllocator):
+    """
+    Test that one overcurrent leads to one reduction.
+
+    After a cut it takes a while before the charger, the car and the meter
+    show the effect. The meter keeps reporting the old overcurrent in the
+    meantime, which must not lower the charger again and again.
+    """
+    charger = MockCharger(initial_current=16, max_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+    now = time()
+
+    result = power_allocator.update_allocation({Phase.L1: -6}, now=now)
+    assert result["charger1"] == dict.fromkeys(Phase, 10)
+    _apply(power_allocator, charger, result, now)
+
+    # The meter still reports the same 6 A overcurrent for the next seconds
+    for second in range(1, 10):
+        assert power_allocator.update_allocation({Phase.L1: -6}, now=now + second) == {}
+
+    assert charger.get_current_limit() == dict.fromkeys(Phase, 10)
+
+
+def test_overcurrent_beyond_pending_reduction_is_still_cut(power_allocator: PowerAllocator):
+    """Test that only the part of a deficit that was not handled yet is cut."""
+    charger = MockCharger(initial_current=16, max_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+    now = time()
+
+    result = power_allocator.update_allocation({Phase.L1: -6}, now=now)
+    _apply(power_allocator, charger, result, now)
+
+    # Another appliance is switched on: 9 A over, of which 6 A is being handled
+    result = power_allocator.update_allocation({Phase.L1: -9}, now=now + 2)
+    assert result["charger1"] == dict.fromkeys(Phase, 7)
+    _apply(power_allocator, charger, result, now + 2)
+
+    assert power_allocator.update_allocation({Phase.L1: -9}, now=now + 3) == {}
+
+
+def test_pending_reduction_expires_after_settle_time(power_allocator: PowerAllocator):
+    """Test that a deficit that outlives the settle time is acted upon again."""
+    charger = MockCharger(initial_current=16, max_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+    settle_time = charger.current_change_settle_time
+    now = time()
+
+    result = power_allocator.update_allocation({Phase.L1: -6}, now=now)
+    _apply(power_allocator, charger, result, now)
+
+    assert power_allocator.update_allocation({Phase.L1: -6}, now=now + settle_time - 1) == {}
+
+    # The reduction had its time, the overcurrent is still there: cut again
+    result = power_allocator.update_allocation({Phase.L1: -6}, now=now + settle_time)
+    assert result["charger1"] == dict.fromkeys(Phase, 4)
+
+
+def test_pending_reduction_waits_for_a_fresh_meter_reading(power_allocator: PowerAllocator):
+    """
+    Test that a slowly reporting meter does not trigger the same cut twice.
+
+    A meter that reports every 30 seconds still shows the old reading when the
+    settle time has passed. The reduction is only evaluated again once a
+    reading arrives that is new enough to contain its effect.
+    """
+    charger = MockCharger(initial_current=16, max_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+    settle_time = charger.current_change_settle_time
+    now = time()
+    last_report = now - 5
+
+    result = power_allocator.update_allocation({Phase.L1: -6}, now=now, measured_at=last_report)
+    _apply(power_allocator, charger, result, now)
+
+    # Settle time has passed, but the meter did not report anything new yet
+    assert power_allocator.update_allocation(
+        {Phase.L1: -6}, now=now + settle_time + 5, measured_at=last_report
+    ) == {}
+
+    # A new reading that still shows the overcurrent has to be acted upon
+    result = power_allocator.update_allocation(
+        {Phase.L1: -6}, now=now + settle_time + 11, measured_at=now + settle_time + 10
+    )
+    assert result["charger1"] == dict.fromkeys(Phase, 4)
+
+
+def test_pending_reduction_does_not_wait_forever_for_the_meter(power_allocator: PowerAllocator):
+    """Test that a meter that stops reporting can not block reductions."""
+    charger = MockCharger(initial_current=16, max_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+    settle_time = charger.current_change_settle_time
+    now = time()
+    last_report = now - 5
+
+    result = power_allocator.update_allocation({Phase.L1: -6}, now=now, measured_at=last_report)
+    _apply(power_allocator, charger, result, now)
+
+    result = power_allocator.update_allocation(
+        {Phase.L1: -6}, now=now + settle_time * 4, measured_at=last_report
+    )
+    assert result["charger1"] == dict.fromkeys(Phase, 4)
+
+
+def test_headroom_clears_pending_reduction(power_allocator: PowerAllocator):
+    """Test that a new overcurrent after a recovery is handled right away."""
+    charger = MockCharger(initial_current=16, max_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+    now = time()
+
+    result = power_allocator.update_allocation({Phase.L1: -6}, now=now)
+    _apply(power_allocator, charger, result, now)
+
+    # The reduction worked: the meter shows headroom again
+    power_allocator.update_allocation({Phase.L1: 2}, now=now + 4)
+
+    # A new overcurrent shortly after has nothing to do with the earlier one
+    result = power_allocator.update_allocation({Phase.L1: -3}, now=now + 6)
+    assert result["charger1"] == dict.fromkeys(Phase, 7)
+
+
+# ===== INITIALISATION DURING A SESSION =====
+
+def test_initialize_during_session_requests_maximum(power_allocator: PowerAllocator):
+    """
+    Test that a limit found on the charger during a session is not adopted.
+
+    After a restart or reload the charger may still have a limit that was
+    lowered by the load balancer. Using it as the requested current would
+    make that reduction permanent.
+    """
+    charger = MockCharger(initial_current=6, max_current=16, charger_id="charger1")
+    charger.set_can_charge(True)
+    power_allocator.add_charger_and_initialize(charger)
+
+    state = power_allocator._chargers["charger1"]
+    assert state.requested_current == dict.fromkeys(Phase, 16)
+    assert state.last_applied_current == dict.fromkeys(Phase, 6)
+
+    result = power_allocator.update_allocation(dict.fromkeys(Phase, 20))
+    assert result["charger1"] == dict.fromkeys(Phase, 16)
+
+
+def test_initialize_without_session_keeps_current_limit(power_allocator: PowerAllocator):
+    """Test that the limit of an idle charger is used as requested current."""
+    charger = MockCharger(initial_current=6, max_current=16, charger_id="charger1")
+    charger.set_can_charge(False)
+    power_allocator.add_charger_and_initialize(charger)
+
+    state = power_allocator._chargers["charger1"]
+    assert state.requested_current == dict.fromkeys(Phase, 6)
+
+
+def test_update_applied_current_for_unknown_charger(power_allocator: PowerAllocator):
+    """Test that applying a current for an unknown charger is ignored."""
+    power_allocator.update_applied_current("unknown", dict.fromkeys(Phase, 6), timestamp=time())
+    assert power_allocator._chargers == {}

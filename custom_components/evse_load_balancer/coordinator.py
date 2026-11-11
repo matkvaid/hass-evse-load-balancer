@@ -1,7 +1,7 @@
 """Main coordinator for load balacer."""
 
 import logging
-from datetime import datetime, timedelta  # Ensure datetime is imported
+from datetime import datetime, timedelta
 from functools import cached_property
 from math import floor
 
@@ -11,6 +11,7 @@ from homeassistant.const import ATTR_DEVICE_ID
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.event import async_track_time_interval
+from homeassistant.util import dt as dt_util
 
 from . import config_flow as cf
 from . import options_flow as of
@@ -43,10 +44,12 @@ MIN_CHARGER_UPDATE_DELAY: int = 20
 class EVSELoadBalancerCoordinator:
     """Coordinator for the EVSE Load Balancer."""
 
-    # MODIFIED: Store as datetime object or None
     _last_check_timestamp: datetime | None = None
     _last_charger_update_time: int | None = None
     _last_decrease_time: int | None = None
+    _meter_entities: list[str] | None = None
+    _meter_reading_missing: bool = False
+    _charger_limit_missing: bool = False
 
     def __init__(
         self,
@@ -108,9 +111,16 @@ class EVSELoadBalancerCoordinator:
     @cached_property
     def _device(self) -> dr.DeviceEntry:
         """Get the device entry for the coordinator."""
-        device_registry = dr.async_get(self.hass)
-        device = device_registry.async_get_device(
-            identifiers={(DOMAIN, self.config_entry.entry_id)}
+        identifier = (DOMAIN, self.config_entry.entry_id)
+        device = next(
+            (
+                device
+                for device in dr.async_entries_for_config_entry(
+                    dr.async_get(self.hass), self.config_entry.entry_id
+                )
+                if identifier in device.identifiers
+            ),
+            None,
         )
         if device is None:
             msg = (
@@ -170,14 +180,32 @@ class EVSELoadBalancerCoordinator:
         for phase_obj in self._available_phases:
             current = self.get_available_current_for_phase(phase_obj)
             if current is None:
-                _LOGGER.error(
-                    "Available current for phase '%s' is None."
-                    "Cannot proceed with balancing cycle.",
-                    phase_obj.value,
-                )
+                if not self._meter_reading_missing:
+                    self._meter_reading_missing = True
+                    _LOGGER.warning(
+                        "No meter reading for phase '%s'. Load balancing is "
+                        "paused until the meter reports again. Make sure the "
+                        "entities of the meter for this phase are enabled.",
+                        phase_obj.value,
+                    )
                 return None
             available_currents[phase_obj] = current
+
+        if self._meter_reading_missing:
+            self._meter_reading_missing = False
+            _LOGGER.info("Meter readings are back. Load balancing resumed.")
         return available_currents
+
+    def _get_meter_report_time(self) -> float | None:
+        """Return when the meter last reported a reading, if that is known."""
+        if self._meter_entities is None:
+            self._meter_entities = list(self._meter.get_tracking_entities())
+        report_times = [
+            state.last_reported.timestamp()
+            for entity_id in self._meter_entities
+            if (state := self.hass.states.get(entity_id)) is not None
+        ]
+        return max(report_times, default=None)
 
     @cached_property
     def _available_phases(self) -> list[Phase]:
@@ -201,13 +229,12 @@ class EVSELoadBalancerCoordinator:
     @callback
     def _execute_update_cycle(self, now: datetime) -> None:
         """Execute the main update cycle for load balancing."""
-        self._last_check_timestamp = datetime.now().astimezone()
+        self._last_check_timestamp = dt_util.utcnow()
         available_currents = self._get_available_currents()
 
         self._async_update_sensors()
 
         if available_currents is None:
-            _LOGGER.warning("Available current unknown. Cannot adjust limit.")
             return
 
         # Run the actual charger update
@@ -222,7 +249,9 @@ class EVSELoadBalancerCoordinator:
         )
 
         allocation_results = self._power_allocator.update_allocation(
-            available_currents=computed_availability
+            available_currents=computed_availability,
+            now=now.timestamp(),
+            measured_at=self._get_meter_report_time(),
         )
 
         # Allocator has been build to support multiple chargers. Right now
@@ -233,8 +262,14 @@ class EVSELoadBalancerCoordinator:
         current_limit = self._charger.get_current_limit()
 
         if current_limit is None:
-            _LOGGER.warning("Current charger limit unknown. Cannot adjust limit.")
+            if not self._charger_limit_missing:
+                self._charger_limit_missing = True
+                _LOGGER.warning(
+                    "Current charger limit unknown. The limit can not be adjusted "
+                    "until the charger reports it again."
+                )
             return
+        self._charger_limit_missing = False
 
         if allocation_result and self._may_update_charger_settings(
             new_settings=allocation_result,
@@ -303,10 +338,10 @@ class EVSELoadBalancerCoordinator:
             )
             return False
 
-        # For increases, also require additional configured delay since the last decrease.
+        # For increases, also require the configured delay since the last decrease.
         # Using last_decrease_time (not last_update_time) ensures that the increase
         # hysteresis window is not reset by subsequent increases, only by decreases.
-        # If no decrease has happened yet, fall back to last_update_time (original behavior).
+        # If no decrease has happened yet, fall back to last_update_time.
         last_decrease_time = (
             self._last_decrease_time
             if self._last_decrease_time is not None

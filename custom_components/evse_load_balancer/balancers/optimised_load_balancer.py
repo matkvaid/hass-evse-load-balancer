@@ -1,10 +1,9 @@
-"""Abstract Balancer Base Class for Load Balancing Algorithms."""
+"""Optimised Load Balancer Algorithm."""
 
 from time import time
 
-from custom_components.evse_load_balancer.balancers.balancer import Balancer
-from custom_components.evse_load_balancer.const import OvercurrentMode
-from custom_components.evse_load_balancer.meters.meter import Phase
+from ..const import OvercurrentMode, Phase  # noqa: TID252
+from .balancer import Balancer
 
 
 class OptimisedLoadBalancer(Balancer):
@@ -42,9 +41,16 @@ class OptimisedLoadBalancer(Balancer):
     def compute_availability(
         self,
         available_currents: dict[Phase, int],
-        now: float = time(),
+        now: float | None = None,
     ) -> dict[Phase, int]:
-        """Compute available currents."""
+        """
+        Compute the current to hand out or take away per phase.
+
+        Positive values can be handed out to chargers, negative values have
+        to be taken away from them and zero means that nothing should change.
+        """
+        if now is None:
+            now = time()
         available = {}
         for phase, current in available_currents.items():
             available[phase] = self._phase_monitors[phase].update(
@@ -72,33 +78,36 @@ class PhaseMonitor:
         self._risk_decay_per_second = risk_decay_per_second
         self._overcurrent_mode = overcurrent_mode
 
-        self._last_compute: int | None = None
+        self._last_compute: float | None = None
         self._cumulative_trip_risk = 0.0
 
-    def update(self, avail: float, now: int) -> float:
-        """Update the current availability and compute the new limit."""
+    def update(self, avail: float, now: float) -> float:
+        """
+        Return the current to hand out (positive) or take away (negative).
+
+        Zero means "hold": there is no headroom, or an overcurrent is still
+        being tolerated. A deficit is only reported on the cycle it has to be
+        acted upon, so that a single overcurrent leads to a single reduction.
+        """
         elapsed = now - self._last_compute if self._last_compute is not None else 0
+        self._last_compute = now
 
-        if avail < 0:
-            if self._overcurrent_mode == OvercurrentMode.OPTIMISED:
-                risk_increase = self._calculate_trip_risk(avail) * elapsed
-                self._cumulative_trip_risk += risk_increase
-
-                if self._cumulative_trip_risk >= self._trip_risk_threshold:
-                    self._cumulative_trip_risk = 0.0
-                    self.phase_limit = avail
-            else:
-                self._cumulative_trip_risk = 0.0
-                self.phase_limit = max(0, self.phase_limit + avail)
-        else:
+        if avail >= 0:
             risk_decay = self._risk_decay_per_second * elapsed
             self._cumulative_trip_risk = max(
                 0.0, self._cumulative_trip_risk - risk_decay
             )
             self.phase_limit = min(self.max_limit, avail)
+            return self.phase_limit
 
-        self._last_compute = now
+        if self._overcurrent_mode == OvercurrentMode.OPTIMISED:
+            self._cumulative_trip_risk += self._calculate_trip_risk(avail) * elapsed
+            if self._cumulative_trip_risk < self._trip_risk_threshold:
+                self.phase_limit = 0
+                return self.phase_limit
 
+        self._cumulative_trip_risk = 0.0
+        self.phase_limit = avail
         return self.phase_limit
 
     def _calculate_trip_risk(self, available: float) -> float:
@@ -111,6 +120,8 @@ class PhaseMonitor:
         the values here are roughly (as in extremely roughly) based on
         the trip risk curve in C-character circuit breakers.
         """
+        if self.max_limit <= 0:
+            return self._trip_risk_threshold
         overcurrent_percentage = abs(available) / self.max_limit
         if overcurrent_percentage <= 0.13:  # noqa: PLR2004
             return self._trip_risk_threshold / 60

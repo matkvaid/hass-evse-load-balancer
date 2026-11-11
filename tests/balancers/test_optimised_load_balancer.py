@@ -36,11 +36,12 @@ def test_negative_available_current_within_risk_boundary():
     lb.compute_availability(available_currents_one, 0)
     computed_availability = lb.compute_availability(available_currents_two, now)
     # Calculation:
-    # overcurrent_percentage = abs(-5)/32 ~ 0.15625 => risk increase rate = 60/30 = 2.
+    # overcurrent_percentage = abs(-5)/25 = 0.2 => risk increase rate = 60/30 = 2.
     # risk_increase = 2 * (5) = 10, which is less than trip_risk_threshold (60).
-    # Therefore, the returned available current should be -5.
+    # The overcurrent is tolerated for now, so nothing may change: no cut yet,
+    # but certainly no surplus to hand out either.
     for phase in Phase:
-        assert computed_availability[phase] == 5
+        assert computed_availability[phase] == 0
 
 
 def test_stable_recovery_triggers_increase():
@@ -89,10 +90,18 @@ def test_conservative_mode_immediate_reduction():
 
     for phase in Phase:
         assert limits_one[phase] == 20
-        assert limits_two[phase] == 15
+        # Conservative mode reports the deficit right away, so that the
+        # PowerAllocator takes it off the chargers.
+        assert limits_two[phase] == -5
 
 
-def test_conservative_mode_never_goes_below_zero():
+def test_conservative_mode_emits_negative_deficit():
+    """
+    Conservative mode must report a negative availability during overcurrent.
+
+    It used to clamp the value at zero, which the PowerAllocator never acts
+    upon, so the charger limit was never reduced.
+    """
     lb = OptimisedLoadBalancer(
         max_limits=dict.fromkeys(Phase, 25),
         overcurrent_mode=OvercurrentMode.CONSERVATIVE,
@@ -105,7 +114,7 @@ def test_conservative_mode_never_goes_below_zero():
 
     for phase in Phase:
         assert limits_one[phase] == 5
-        assert limits_two[phase] == 0
+        assert limits_two[phase] == -10
 
 
 def test_conservative_mode_allows_increases():
@@ -123,7 +132,7 @@ def test_conservative_mode_allows_increases():
 
     for phase in Phase:
         assert limits_one[phase] == 10
-        assert limits_two[phase] == 5
+        assert limits_two[phase] == -5
         assert limits_three[phase] == 15
 
 
@@ -170,5 +179,49 @@ def test_conservative_vs_optimised_mode_behavior():
     for phase in Phase:
         assert limits_conservative_one[phase] == 20
         assert limits_optimised_one[phase] == 20
-        assert limits_conservative_two[phase] == 17
-        assert limits_optimised_two[phase] == 20
+        # Conservative reduces immediately, optimised holds while it tolerates
+        # the overcurrent.
+        assert limits_conservative_two[phase] == -3
+        assert limits_optimised_two[phase] == 0
+
+
+def test_deficit_is_reported_once_per_trip():
+    """
+    A sustained overcurrent must not be reported again on every cycle.
+
+    The deficit is only reported on the cycle the risk threshold is crossed.
+    Repeating it every second made the chargers get cut again and again for
+    the same overcurrent, before the first cut could show up in the readings.
+    """
+    lb = OptimisedLoadBalancer(max_limits=dict.fromkeys(Phase, 25))
+    overcurrent = dict.fromkeys(Phase, -5)
+
+    lb.compute_availability(dict.fromkeys(Phase, 10), 0)
+    # -5 A on 25 A accumulates 2 risk per second, tripping after 30 seconds
+    tripped = lb.compute_availability(overcurrent, 30)
+    following = [lb.compute_availability(overcurrent, 30 + i) for i in range(1, 30)]
+    tripped_again = lb.compute_availability(overcurrent, 60)
+
+    for phase in Phase:
+        assert tripped[phase] == -5
+        assert all(availability[phase] == 0 for availability in following)
+        assert tripped_again[phase] == -5
+
+
+def test_no_surplus_reported_during_tolerated_overcurrent():
+    """A phase that is over its limit must never report current to hand out."""
+    lb = OptimisedLoadBalancer(max_limits=dict.fromkeys(Phase, 25))
+
+    assert lb.compute_availability(dict.fromkeys(Phase, 8), 0)[Phase.L1] == 8
+    for second in range(1, 20):
+        availability = lb.compute_availability(dict.fromkeys(Phase, -1), second)
+        assert availability[Phase.L1] == 0
+
+
+def test_zero_max_limit_does_not_raise():
+    """A fuse size of zero must be handled as maximum risk, not as a crash."""
+    lb = OptimisedLoadBalancer(max_limits=dict.fromkeys(Phase, 0))
+    lb.compute_availability(dict.fromkeys(Phase, 0), 0)
+    availability = lb.compute_availability(dict.fromkeys(Phase, -4), 1)
+    for phase in Phase:
+        assert availability[phase] == -4
