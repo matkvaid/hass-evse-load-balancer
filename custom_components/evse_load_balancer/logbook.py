@@ -34,11 +34,14 @@ def async_describe_events(
         action = data.get(EVENT_ATTR_ACTION)
 
         if action == EVENT_ACTION_NEW_CHARGER_LIMITS:
-            new_limits: dict[Phase, int] = data.get(EVENT_ATTR_NEW_LIMITS, {})
-            message = (
-                "charger limits set to: ",
-                ", ".join(f"{phase}: {limit}A" for phase, limit in new_limits.items()),
+            new_limits: dict[Phase | str, int] = data.get(EVENT_ATTR_NEW_LIMITS, {})
+            # Phases are enum members on live events, but plain strings on
+            # events that are read back from the recorder.
+            limits = ", ".join(
+                f"{str(getattr(phase, 'value', phase)).upper()}: {limit}A"
+                for phase, limit in new_limits.items()
             )
+            message = f"charger limits set to: {limits}"
         else:
             msg = f"Unknown action: {action}"
             raise ValueError(msg)

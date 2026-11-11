@@ -3,8 +3,6 @@
 from unittest import mock
 
 from homeassistant import config_entries
-from homeassistant.const import __version__ as HA_VERSION
-from packaging.version import parse as parse_version
 from custom_components.evse_load_balancer import config_flow, const
 
 

@@ -4,10 +4,7 @@ import logging
 from functools import cached_property
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntityDescription
-from homeassistant.components.sensor.const import UnitOfElectricCurrent
-from homeassistant.helpers.entity import (
-    EntityCategory,
-)
+from homeassistant.const import EntityCategory, UnitOfElectricCurrent
 
 from .const import (
     Phase,
@@ -35,8 +32,6 @@ class LoadBalancerPhaseSensor(LoadBalancerSensor):
         self._attr_entity_category = EntityCategory.DIAGNOSTIC
         self._attr_native_unit_of_measurement = UnitOfElectricCurrent.AMPERE
 
-        coordinator.register_sensor(self)
-
     @property
     def native_value(self) -> int | None:
         """Return the available current from the coordinator."""
@@ -44,10 +39,9 @@ class LoadBalancerPhaseSensor(LoadBalancerSensor):
             return self._coordinator.get_available_current_for_phase(self._phase)
 
         _LOGGER.error(
-            (
-                f"Cant get sensor value. Sensor {self.entity_description.key}",
-                "has an invalid device class: {self.entity_description.device_class}.",
-            )
+            "Can't get sensor value. Sensor %s has an invalid device class: %s.",
+            self.entity_description.key,
+            self.entity_description.device_class,
         )
 
         return None

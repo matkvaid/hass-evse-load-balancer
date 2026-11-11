@@ -11,7 +11,6 @@ from homeassistant.components.sensor import (
     SensorDeviceClass,
 )
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult
-from homeassistant.const import __version__ as ha_version
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.data_entry_flow import section
 from homeassistant.helpers.selector import (
@@ -21,7 +20,6 @@ from homeassistant.helpers.selector import (
     EntitySelectorConfig,
     NumberSelector,
 )
-from packaging.version import parse as parse_version
 
 from .const import (
     CHARGER_DOMAIN_EASEE,
@@ -49,7 +47,6 @@ CONF_PHASE_SENSOR_CURRENT = "current"
 CONF_PHASE_SENSOR_CONSUMPTION = "power_consumption"
 CONF_PHASE_SENSOR_PRODUCTION = "power_production"
 CONF_PHASE_SENSOR_VOLTAGE = "voltage"
-CONF_PHASE_SENSOR_CURRENT = "current"
 CONF_CUSTOM_PHASE_CONFIG = "custom_phase_config"
 CONF_METER_DEVICE = "meter_device"
 CONF_CHARGER_DEVICE = "charger_device"
@@ -180,13 +177,11 @@ class EvseLoadBalancerConfigFlow(ConfigFlow, domain=DOMAIN):
     @staticmethod
     @callback
     def async_get_options_flow(
-        config_entry: ConfigEntry,
+        config_entry: ConfigEntry,  # noqa: ARG004
     ) -> EvseLoadBalancerOptionsFlow:
         """Get the options flow for this handler."""
+        # The config entry is provided to the flow by Home Assistant itself
         # see https://developers.home-assistant.io/blog/2024/11/12/options-flow/
-        if parse_version(ha_version) < parse_version("2024.11.0"):
-            return EvseLoadBalancerOptionsFlow(config_entry=config_entry)
-
         return EvseLoadBalancerOptionsFlow()
 
     async def async_step_user(

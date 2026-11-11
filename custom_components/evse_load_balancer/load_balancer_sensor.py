@@ -1,11 +1,10 @@
 """Load Balancer sensor platform."""
 
 import logging
+from typing import Any
 
 from homeassistant.components.sensor import SensorEntity, SensorEntityDescription
-from homeassistant.helpers.entity import (
-    DeviceInfo,
-)
+from homeassistant.helpers.device_registry import DeviceInfo
 
 from .const import (
     DOMAIN,
@@ -44,16 +43,16 @@ class LoadBalancerSensor(SensorEntity):
         coordinator.register_sensor(self)
 
     @property
-    def native_value(self) -> any:
+    def native_value(self) -> Any:
         """Return the value of the sensor."""
         return self._get_value_from_coordinator()
 
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self.state is not None
+        return self.native_value is not None
 
-    def _get_value_from_coordinator(self) -> any:
+    def _get_value_from_coordinator(self) -> Any:
         """Override in subclass or implement coordinator lookup based on key."""
         return getattr(self._coordinator, self.entity_description.key, None)
 
