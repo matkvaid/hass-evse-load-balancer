@@ -1,4 +1,4 @@
-"""DSMR Meter implementation."""
+"""HomeWizard Meter implementation."""
 
 import logging
 from math import floor
@@ -51,11 +51,9 @@ class HomeWizardMeter(Meter, HaDevice):
             phase, cf.CONF_PHASE_SENSOR_VOLTAGE
         )
         if None in [active_power, voltage_state]:
-            _LOGGER.warning(
-                (
-                    "Missing states for one of phase %s: active_power: %s, ",
-                    "voltage: %s. Are the entities enabled?",
-                ),
+            _LOGGER.debug(
+                "Missing states for phase %s: active_power: %s, voltage: %s. "
+                "Are the entities enabled?",
                 phase,
                 active_power,
                 voltage_state,
@@ -74,7 +72,7 @@ class HomeWizardMeter(Meter, HaDevice):
             phase, cf.CONF_PHASE_SENSOR
         )
         if power_state is None:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Missing state for phase %s: active_power. Is the entity enabled?",
                 phase,
             )
@@ -97,17 +95,21 @@ class HomeWizardMeter(Meter, HaDevice):
 
     def _get_entity_id_for_phase_sensor(
         self, phase: Phase, sensor_const: str
-    ) -> float | None:
+    ) -> str | None:
         """Get the entity_id for a given phase and key."""
-        return self._get_entity_id_by_key(
-            self._get_entity_map_for_phase(phase)[sensor_const]
-        )
+        entity_key = self._get_entity_map_for_phase(phase)[sensor_const]
+        try:
+            return self._get_entity_id_by_key(entity_key)
+        except ValueError:
+            return None
 
     def _get_entity_state_for_phase_sensor(
         self, phase: Phase, sensor_const: str
     ) -> float | None:
         """Get the state of the entity for a given phase and key."""
         entity_id = self._get_entity_id_for_phase_sensor(phase, sensor_const)
+        if entity_id is None:
+            return None
         return self._get_entity_state(entity_id, float)
 
     def _get_entity_map_for_phase(self, phase: Phase) -> dict:

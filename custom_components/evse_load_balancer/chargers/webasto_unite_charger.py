@@ -8,7 +8,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from ..const import CHARGER_DOMAIN_WEBASTO_UNITE, Phase  # noqa: TID252
-from ..ha_device import HaDevice  # noqa: TID252
+from ..ha_device import HaDevice, parse_amps  # noqa: TID252
 from .charger import Charger, PhaseMode
 
 _LOGGER = logging.getLogger(__name__)
@@ -103,23 +103,14 @@ class WebastoUniteCharger(HaDevice, Charger):
 
     def get_current_limit(self) -> dict[Phase, int] | None:
         """Get the current limit of the charger in amps."""
-        state = self._get_entity_state_by_key(
-            WebastoUniteEntityMap.DynamicChargerLimit
-        )
-        if state is None:
-            _LOGGER.warning(
-                "Current limit not available. "
+        state = self._get_entity_state_by_key(WebastoUniteEntityMap.DynamicChargerLimit)
+        current_limit = parse_amps(state)
+        if current_limit is None:
+            _LOGGER.debug(
+                "Current limit '%s' not available. "
                 "Make sure the required entity (%s) is enabled.",
-                WebastoUniteEntityMap.DynamicChargerLimit,
-            )
-            return None
-
-        try:
-            current_limit = int(float(state))
-        except (ValueError, TypeError):
-            _LOGGER.warning(
-                "Could not parse current limit value: %s",
                 state,
+                WebastoUniteEntityMap.DynamicChargerLimit,
             )
             return None
 
@@ -128,20 +119,13 @@ class WebastoUniteCharger(HaDevice, Charger):
     def get_max_current_limit(self) -> dict[Phase, int] | None:
         """Return maximum configured current for the charger."""
         state = self._get_entity_state_by_key(WebastoUniteEntityMap.MaxChargerLimit)
-        if state is None:
-            _LOGGER.warning(
-                "Max charger limit not available. "
+        max_limit = parse_amps(state)
+        if max_limit is None:
+            _LOGGER.debug(
+                "Max charger limit '%s' not available. "
                 "Make sure the required entity (%s) is enabled.",
-                WebastoUniteEntityMap.MaxChargerLimit,
-            )
-            return None
-
-        try:
-            max_limit = int(float(state))
-        except (ValueError, TypeError):
-            _LOGGER.warning(
-                "Could not parse max current limit value: %s",
                 state,
+                WebastoUniteEntityMap.MaxChargerLimit,
             )
             return None
 
@@ -188,7 +172,7 @@ class WebastoUniteCharger(HaDevice, Charger):
             )
             return code
 
-        _LOGGER.warning(
+        _LOGGER.debug(
             "Could not parse charge point state value: %s",
             state,
         )

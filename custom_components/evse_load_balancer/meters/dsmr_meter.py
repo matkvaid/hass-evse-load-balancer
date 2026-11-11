@@ -55,11 +55,9 @@ class DsmrMeter(Meter, HaDevice):
         )
 
         if None in [active_power, voltage_state]:
-            _LOGGER.warning(
-                (
-                    "Missing states for one of phase %s: active_power: %s, ",
-                    "voltage: %s. Are the entities enabled?",
-                ),
+            _LOGGER.debug(
+                "Missing states for phase %s: active_power: %s, voltage: %s. "
+                "Are the entities enabled?",
                 phase,
                 active_power,
                 voltage_state,
@@ -78,7 +76,7 @@ class DsmrMeter(Meter, HaDevice):
         )
 
         if consumption_state is None:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Missing consumption state for phase %s. Is the entity enabled?",
                 phase,
             )

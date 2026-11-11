@@ -58,7 +58,7 @@ class TibberMeter(Meter, HaDevice):
             phase, cf.CONF_PHASE_SENSOR_CURRENT
         )
         if current_state is None:
-            _LOGGER.warning(
+            _LOGGER.debug(
                 "Missing state for phase %s: current. Is the entity enabled?",
                 phase,
             )
@@ -81,15 +81,19 @@ class TibberMeter(Meter, HaDevice):
         self, phase: Phase, sensor_const: str
     ) -> str | None:
         """Get the entity_id for a given phase and key."""
-        return self._get_entity_id_by_key(
-            self._get_entity_map_for_phase(phase)[sensor_const]
-        )
+        entity_key = self._get_entity_map_for_phase(phase)[sensor_const]
+        try:
+            return self._get_entity_id_by_key(entity_key)
+        except ValueError:
+            return None
 
     def _get_entity_state_for_phase_sensor(
         self, phase: Phase, sensor_const: str
     ) -> float | None:
         """Get the state of the entity for a given phase and key."""
         entity_id = self._get_entity_id_for_phase_sensor(phase, sensor_const)
+        if entity_id is None:
+            return None
         return self._get_entity_state(entity_id, float)
 
     def _get_entity_map_for_phase(self, phase: Phase) -> dict:

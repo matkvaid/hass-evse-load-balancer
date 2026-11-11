@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from ..const import CHARGER_DOMAIN_ZAPTEC  # noqa: TID252
-from ..ha_device import HaDevice  # noqa: TID252
+from ..ha_device import HaDevice, parse_amps  # noqa: TID252
 from ..meters.meter import Phase  # Use the correct import path  # noqa: TID252
 from .charger import Charger, PhaseMode
 
@@ -94,35 +94,28 @@ class ZaptecCharger(HaDevice, Charger):
             ZaptecEntityMap.MaxChargingCurrent
         )
 
-        try:
-            current_value = int(float(entity_state))
-            return dict.fromkeys(Phase, current_value)
-        except (ValueError, TypeError):
-            _LOGGER.exception(
+        current_value = parse_amps(entity_state)
+        if current_value is None:
+            _LOGGER.debug(
                 "Could not convert current limit '%s' to number", entity_state
             )
             return None
+        return dict.fromkeys(Phase, current_value)
 
     def get_max_current_limit(self) -> dict[Phase, int] | None:
         """Return maximum configured current for the charger."""
         state = self._get_entity_state_by_translation_key(
             ZaptecEntityMap.AvailableCurrent
         )
-        if state is None:
-            _LOGGER.warning(
-                (
-                    "Max charger limit not available. "
-                    "Make sure the required entity (%s) is enabled"
-                ),
+        # Zaptec returns the same max value for all phases
+        max_value = parse_amps(state)
+        if max_value is None:
+            _LOGGER.debug(
+                "Max charger limit '%s' not available. Make sure the required "
+                "entity (%s) is enabled",
+                state,
                 ZaptecEntityMap.AvailableCurrent,
             )
-            return None
-
-        try:
-            # Zaptec returns the same max value for all phases
-            max_value = int(float(state))
-        except (ValueError, TypeError):
-            _LOGGER.exception("Could not convert max current '%s' to number", state)
             return None
 
         return {

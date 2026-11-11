@@ -64,11 +64,9 @@ class AmsleserMeter(Meter, HaDevice):
             )
 
             if active_power_w is None or voltage_state is None:
-                _LOGGER.warning(
-                    (
-                        "Missing states for one of phase %s: active_power: %s, ",
-                        "voltage: %s, current: %s. Are the entities enabled?",
-                    ),
+                _LOGGER.debug(
+                    "Missing states for phase %s: active_power: %s, voltage: %s, "
+                    "current: %s. Are the entities enabled?",
                     phase,
                     active_power_w,
                     voltage_state,
@@ -83,7 +81,8 @@ class AmsleserMeter(Meter, HaDevice):
                 else None
             )
 
-        return floor(current_state) if current_state else None
+        # A phase without any load reports 0 A, which is a valid reading
+        return floor(current_state) if current_state is not None else None
 
     def get_active_phase_power(self, phase: Phase) -> float | None:
         """Return the active power on a given phase."""
@@ -100,11 +99,9 @@ class AmsleserMeter(Meter, HaDevice):
             )
 
             if current_state is None or voltage_state is None:
-                _LOGGER.warning(
-                    (
-                        "Missing state for one of phase %s: consumption: %s, ",
-                        "current: %s, voltage: %s.",
-                    ),
+                _LOGGER.debug(
+                    "Missing states for phase %s: consumption: %s, current: %s, "
+                    "voltage: %s.",
                     phase,
                     consumption_state,
                     current_state,
@@ -134,9 +131,11 @@ class AmsleserMeter(Meter, HaDevice):
         self, phase: Phase, sensor_const: str
     ) -> float | None:
         """Get the state of the entity for a given phase and suffix."""
-        entity_id = self._get_entity_id_by_key(
-            self._get_entity_map_for_phase(phase)[sensor_const]
-        )
+        entity_key = self._get_entity_map_for_phase(phase)[sensor_const]
+        try:
+            entity_id = self._get_entity_id_by_key(entity_key)
+        except ValueError:
+            return None
         return (
             self._get_entity_state(entity_id, float) if entity_id is not None else None
         )

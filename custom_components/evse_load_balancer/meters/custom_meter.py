@@ -4,6 +4,7 @@ import logging
 from math import floor
 
 from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 
 from .. import config_flow as cf  # noqa: TID252
@@ -35,11 +36,9 @@ class CustomMeter(Meter):
         active_power = self.get_active_phase_power(phase)
         voltage_state = self._get_state(phase_config[cf.CONF_PHASE_SENSOR_VOLTAGE])
         if None in [active_power, voltage_state]:
-            _LOGGER.warning(
-                (
-                    "Missing states for one of phase %s: active_power: %s,",
-                    " voltage_state: %s. Are the entities enabled?",
-                ),
+            _LOGGER.debug(
+                "Missing states for phase %s: active_power: %s, voltage_state: %s. "
+                "Are the entities enabled?",
                 phase,
                 active_power,
                 voltage_state,
@@ -53,11 +52,9 @@ class CustomMeter(Meter):
         consumption = self._get_state(phase_config[cf.CONF_PHASE_SENSOR_CONSUMPTION])
         production = self._get_state(phase_config[cf.CONF_PHASE_SENSOR_PRODUCTION])
         if None in [consumption, production]:
-            _LOGGER.warning(
-                (
-                    "Missing states for one of phase %s: consumption: %s, "
-                    "production: %s. Are the entities enabled?"
-                ),
+            _LOGGER.debug(
+                "Missing states for phase %s: consumption: %s, production: %s. "
+                "Are the entities enabled?",
                 phase,
                 consumption,
                 production,
@@ -69,12 +66,18 @@ class CustomMeter(Meter):
         """Return a list of entity IDs that should be tracked for this meter."""
         sensors = []
         for phase_cf in PHASE_CONF_MAP.values():
-            for cf_sensor in [
-                cf.CONF_PHASE_SENSOR_CONSUMPTION,
-                cf.CONF_PHASE_SENSOR_PRODUCTION,
-                cf.CONF_PHASE_SENSOR_VOLTAGE,
-            ]:
-                sensors.extend(self._config_entry_data[phase_cf][cf_sensor])
+            # Only the phases that are in use have been configured
+            phase_config = self._config_entry_data.get(phase_cf)
+            if phase_config is None:
+                continue
+            sensors.extend(
+                phase_config[cf_sensor]
+                for cf_sensor in (
+                    cf.CONF_PHASE_SENSOR_CONSUMPTION,
+                    cf.CONF_PHASE_SENSOR_PRODUCTION,
+                    cf.CONF_PHASE_SENSOR_VOLTAGE,
+                )
+            )
         return sensors
 
     def _get_state(self, entity_id: str) -> float | None:
@@ -83,13 +86,13 @@ class CustomMeter(Meter):
             _LOGGER.debug("State not found for entity %s", entity_id)
             return None
         state_value = state.state
+        if state_value in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            _LOGGER.debug("Entity %s has no value: %s", entity_id, state_value)
+            return None
         try:
             return float(state_value)
-        except ValueError as ex:
-            _LOGGER.exception(
-                "Failed to parse state %s for entity %s: %s",
-                state_value,
-                entity_id,
-                ex,  # noqa: TRY401
+        except ValueError:
+            _LOGGER.debug(
+                "Failed to parse state %s for entity %s", state_value, entity_id
             )
             return None

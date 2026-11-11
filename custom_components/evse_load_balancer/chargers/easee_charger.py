@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from ..const import CHARGER_DOMAIN_EASEE, Phase  # noqa: TID252
-from ..ha_device import HaDevice  # noqa: TID252
+from ..ha_device import HaDevice, parse_amps  # noqa: TID252
 from .charger import Charger, PhaseMode
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,36 +95,34 @@ class EaseeCharger(HaDevice, Charger):
 
     def get_current_limit(self) -> dict[Phase, int] | None:
         """See base class for correct implementation of this method."""
-        state = self._get_entity_state_by_translation_key(
-            EaseeEntityMap.DynamicChargerLimit
+        limit = parse_amps(
+            self._get_entity_state_by_translation_key(
+                EaseeEntityMap.DynamicChargerLimit
+            )
         )
-        if state is None:
-            _LOGGER.warning(
-                (
-                    "Mas Charger limit not available. ",
-                    "Make sure the required entity ",
-                    "({EaseeEntityMap.DynamicChargerLimit}) is enabled",
-                )
+        if limit is None:
+            _LOGGER.debug(
+                "Charger limit not available. Make sure the required entity "
+                "(%s) is enabled",
+                EaseeEntityMap.DynamicChargerLimit,
             )
             return None
 
-        return dict.fromkeys(Phase, int(state))
+        return dict.fromkeys(Phase, limit)
 
     def get_max_current_limit(self) -> dict[Phase, int] | None:
         """Return maximum configured current for the charger."""
-        state = self._get_entity_state_by_translation_key(
-            EaseeEntityMap.MaxChargerLimit
+        limit = parse_amps(
+            self._get_entity_state_by_translation_key(EaseeEntityMap.MaxChargerLimit)
         )
-        if state is None:
-            _LOGGER.warning(
-                (
-                    "Mas Charger limit not available. ",
-                    "Make sure the required entity ",
-                    "({EaseeEntityMap.MaxChargerLimit}) is enabled",
-                )
+        if limit is None:
+            _LOGGER.debug(
+                "Max charger limit not available. Make sure the required entity "
+                "(%s) is enabled",
+                EaseeEntityMap.MaxChargerLimit,
             )
             return None
-        return dict.fromkeys(Phase, int(state))
+        return dict.fromkeys(Phase, limit)
 
     def has_synced_phase_limits(self) -> bool:
         """

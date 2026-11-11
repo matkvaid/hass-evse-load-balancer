@@ -2,8 +2,9 @@
 
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
+from homeassistant.const import STATE_UNAVAILABLE, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import (
     entity_registry as er,
@@ -11,11 +12,17 @@ from homeassistant.helpers import (
 from homeassistant.helpers.device_registry import (
     DeviceEntry,
 )
-
-if TYPE_CHECKING:
-    from homeassistant.helpers.entity_registry import RegistryEntry
+from homeassistant.helpers.entity_registry import RegistryEntry
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def parse_amps(state: Any) -> int | None:
+    """Parse an entity state that holds a current in amps."""
+    try:
+        return int(float(state))
+    except (TypeError, ValueError):
+        return None
 
 
 class HaDevice:
@@ -26,17 +33,24 @@ class HaDevice:
         self.hass = hass
         self.device_entry = device_entry
         self.entity_registry = er.async_get(self.hass)
+        self.entities: list[RegistryEntry] = []
+        self._reported_disabled: set[str] = set()
 
     def refresh_entities(self) -> None:
-        """Refresh local list of entity maps for the meter."""
-        self._entities = self._get_entities_for_device()
-
-    def _get_entities_for_device(self) -> None:
-        """Get all available entities for the linked HA device."""
-        self.entities = self.entity_registry.entities.get_entries_for_device_id(
+        """Refresh local list of entities of the linked HA device."""
+        self.entities = er.async_entries_for_device(
+            self.entity_registry,
             self.device_entry.id,
             include_disabled_entities=True,
         )
+
+    def _report_if_disabled(self, entity: RegistryEntry) -> None:
+        """Log that a required entity is disabled, once per entity."""
+        if entity.disabled and entity.entity_id not in self._reported_disabled:
+            self._reported_disabled.add(entity.entity_id)
+            _LOGGER.error(
+                "Required entity %s is disabled. Please enable it!", entity.entity_id
+            )
 
     def _get_entity_id_by_translation_key(self, entity_translation_key: str) -> str:
         """Get the entity ID for a given translation key."""
@@ -47,10 +61,7 @@ class HaDevice:
         if entity is None:
             msg = f"Entity not found for translation_key '{entity_translation_key}'"
             raise ValueError(msg)
-        if entity.disabled:
-            _LOGGER.error(
-                "Required entity %s is disabled. Please enable it!", entity.entity_id
-            )
+        self._report_if_disabled(entity)
         return entity.entity_id
 
     def _get_entity_id_by_unique_id(self, entity_unique_id: str) -> str | None:
@@ -62,10 +73,7 @@ class HaDevice:
         if entity is None:
             msg = f"Entity not found for unique_id '{entity_unique_id}'"
             raise ValueError(msg)
-        if entity.disabled:
-            _LOGGER.error(
-                "Required entity %s is disabled. Please enable it!", entity.entity_id
-            )
+        self._report_if_disabled(entity)
         return entity.entity_id
 
     def _get_entity_id_by_key(self, entity_key: str) -> str | None:
@@ -82,10 +90,7 @@ class HaDevice:
         if entity is None:
             msg = f"Entity with unique_id ending with '_{entity_key}' not found"
             raise ValueError(msg)
-        if entity.disabled:
-            _LOGGER.error(
-                "Required entity %s is disabled. Please enable it!", entity.entity_id
-            )
+        self._report_if_disabled(entity)
         return entity.entity_id
 
     def _get_entity_state(
@@ -96,10 +101,13 @@ class HaDevice:
         if state is None:
             _LOGGER.debug("State not found for entity %s", entity_id)
             return None
+        if state.state in (STATE_UNAVAILABLE, STATE_UNKNOWN):
+            _LOGGER.debug("Entity %s has no value: %s", entity_id, state.state)
+            return None
 
         try:
             return parser_fn(state.state) if parser_fn else state.state
-        except ValueError:
+        except (ValueError, TypeError):
             _LOGGER.warning(
                 "State for entity %s can't be parsed: %s", entity_id, state.state
             )

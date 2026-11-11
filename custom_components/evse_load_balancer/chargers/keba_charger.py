@@ -7,7 +7,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceEntry
 
 from ..const import CHARGER_DOMAIN_KEBA, Phase  # noqa: TID252
-from ..ha_device import HaDevice  # noqa: TID252
+from ..ha_device import HaDevice, parse_amps  # noqa: TID252
 from .charger import Charger, PhaseMode
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,18 +88,20 @@ class KebaCharger(HaDevice, Charger):
 
     def get_current_limit(self) -> dict[Phase, int] | None:
         """See base class for correct implementation of this method."""
-        state = self._get_entity_state_by_unique_id(
-            self._compose_unique_id(KebaEntityMap.MaxCurrent)
+        limit = parse_amps(
+            self._get_entity_state_by_unique_id(
+                self._compose_unique_id(KebaEntityMap.MaxCurrent)
+            )
         )
-        if state is None:
-            _LOGGER.warning(
-                "Max Charger limit not available. Make sure the required entity "
+        if limit is None:
+            _LOGGER.debug(
+                "Charger limit not available. Make sure the required entity "
                 "(%s) is enabled.",
                 KebaEntityMap.MaxCurrent,
             )
             return None
 
-        return dict.fromkeys(Phase, int(state))
+        return dict.fromkeys(Phase, limit)
 
     def get_max_current_limit(self) -> dict[Phase, int] | None:
         """
